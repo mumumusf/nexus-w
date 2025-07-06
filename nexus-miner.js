@@ -138,14 +138,14 @@ ${this.nexusCliPath} start --node-id $NODE_ID
     }
 
     // 启动节点
-    async startNodes(nodeId, nodeCount) {
+    async startNodes(nodeIds, nodeCount) {
         console.log(`\n🚀 启动 ${nodeCount} 个节点...`);
         
         const activeScreens = [];
         
         for (let i = 0; i < nodeCount; i++) {
             const sessionName = `nexus_node_${i}`;
-            const currentNodeId = parseInt(nodeId) + i;
+            const currentNodeId = nodeIds[i];
             
             try {
                 // 创建启动脚本
@@ -242,12 +242,6 @@ ${this.nexusCliPath} start --node-id $NODE_ID
         }
         
         // 获取用户输入
-        const nodeId = await this.getUserInput(`\n请输入您的 Node ID (例如: 6520503): `);
-        if (!nodeId || isNaN(parseInt(nodeId))) {
-            console.log('❌ 无效的 Node ID');
-            return;
-        }
-        
         const nodeCountInput = await this.getUserInput(
             `您最多可以运行 ${maxNodes} 个节点，请输入要运行的节点数量 (1-${maxNodes}): `
         );
@@ -257,6 +251,32 @@ ${this.nexusCliPath} start --node-id $NODE_ID
             console.log('❌ 无效的节点数量');
             return;
         }
+
+        // 为每个节点获取Node ID
+        const nodeIds = [];
+        console.log('\n📝 请为每个节点输入不同的 Node ID:');
+        
+        for (let i = 0; i < nodeCount; i++) {
+            const nodeId = await this.getUserInput(`请输入节点 ${i + 1} 的 Node ID: `);
+            if (!nodeId || isNaN(parseInt(nodeId))) {
+                console.log('❌ 无效的 Node ID');
+                return;
+            }
+            
+            // 检查是否重复
+            if (nodeIds.includes(nodeId)) {
+                console.log('❌ Node ID 不能重复，请重新输入');
+                i--; // 重新输入当前节点
+                continue;
+            }
+            
+            nodeIds.push(nodeId);
+        }
+        
+        console.log('\n✅ 所有Node ID收集完成:');
+        nodeIds.forEach((id, index) => {
+            console.log(`   节点 ${index + 1}: ${id}`);
+        });
         
         // 安装Nexus CLI
         if (!await this.installNexusCLI()) {
@@ -265,7 +285,7 @@ ${this.nexusCliPath} start --node-id $NODE_ID
         }
         
         // 启动节点
-        const activeSessions = await this.startNodes(nodeId, nodeCount);
+        const activeSessions = await this.startNodes(nodeIds, nodeCount);
         
         if (activeSessions.length > 0) {
             console.log('\n🎉 节点启动完成！');
