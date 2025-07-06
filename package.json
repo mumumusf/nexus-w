@@ -1,0 +1,34 @@
+{
+  "name": "nexus-miner",
+  "version": "1.0.0",
+  "description": "自动化的 Nexus 节点挖矿脚本，支持多节点管理和资源自动检测",
+  "main": "nexus-miner.js",
+  "scripts": {
+    "start": "node nexus-miner.js",
+    "test": "node -e \"console.log('Testing Nexus Miner...')\"",
+    "stop": "bash stop_all_nodes.sh"
+  },
+  "keywords": [
+    "nexus",
+    "mining",
+    "blockchain",
+    "nodes",
+    "automation"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "bin": {
+    "nexus-miner": "./nexus-miner.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourusername/nexus-miner.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/nexus-miner/issues"
+  },
+  "homepage": "https://github.com/yourusername/nexus-miner#readme"
+} 
