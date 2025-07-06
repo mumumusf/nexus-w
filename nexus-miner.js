@@ -210,6 +210,147 @@ ${this.nexusCliPath} start --node-id $NODE_ID
         });
     }
 
+    // 查看节点日志
+    async viewNodeLog(sessionName, nodeId) {
+        console.log(`\n📋 查看节点日志 (Session: ${sessionName}, Node ID: ${nodeId})`);
+        console.log('按 Ctrl+C 返回主菜单\n');
+        
+        try {
+            // 使用screen -r连接到会话，然后立即分离并显示输出
+            const screenCmd = `screen -S ${sessionName} -p 0 -X hardcopy /tmp/${sessionName}_log.txt && cat /tmp/${sessionName}_log.txt`;
+            const output = execSync(screenCmd, { encoding: 'utf8' });
+            console.log(output);
+            
+            // 清理临时文件
+            execSync(`rm -f /tmp/${sessionName}_log.txt`, { stdio: 'ignore' });
+        } catch (error) {
+            console.log(`❌ 无法获取节点日志: ${error.message}`);
+        }
+    }
+
+    // 交互菜单
+    async interactiveMenu(activeSessions, nodeIds) {
+        while (true) {
+            console.log('\n' + '='.repeat(50));
+            console.log('🎛️  节点管理菜单');
+            console.log('='.repeat(50));
+            console.log('1. 查看所有节点状态');
+            console.log('2. 查看节点日志');
+            console.log('3. 连接到节点 (进入screen会话)');
+            console.log('4. 停止所有节点');
+            console.log('5. 退出菜单');
+            console.log('='.repeat(50));
+            
+            const choice = await this.getUserInput('请选择操作 (1-5): ');
+            
+            switch (choice) {
+                case '1':
+                    this.showNodeStatus(activeSessions, nodeIds);
+                    break;
+                    
+                case '2':
+                    await this.selectNodeForLog(activeSessions, nodeIds);
+                    break;
+                    
+                case '3':
+                    await this.connectToNode(activeSessions, nodeIds);
+                    break;
+                    
+                case '4':
+                    await this.stopAllNodes();
+                    return;
+                    
+                case '5':
+                    console.log('\n👋 退出管理菜单，节点继续在后台运行');
+                    console.log('使用以下命令管理节点:');
+                    console.log('   查看状态: screen -ls');
+                    console.log('   连接节点: screen -r nexus_node_<编号>');
+                    console.log('   停止所有: ./stop_all_nodes.sh');
+                    return;
+                    
+                default:
+                    console.log('❌ 无效选择，请重新输入');
+            }
+        }
+    }
+
+    // 显示节点状态
+    showNodeStatus(activeSessions, nodeIds) {
+        console.log('\n📊 当前节点状态:');
+        console.log('-'.repeat(60));
+        
+        activeSessions.forEach((session, index) => {
+            try {
+                // 检查screen会话是否还在运行
+                execSync(`screen -list | grep ${session}`, { stdio: 'ignore' });
+                console.log(`✅ 节点 ${index + 1}: ${session} (Node ID: ${nodeIds[index]}) - 运行中`);
+            } catch (error) {
+                console.log(`❌ 节点 ${index + 1}: ${session} (Node ID: ${nodeIds[index]}) - 已停止`);
+            }
+        });
+        
+        console.log('-'.repeat(60));
+    }
+
+    // 选择节点查看日志
+    async selectNodeForLog(activeSessions, nodeIds) {
+        console.log('\n📋 选择要查看日志的节点:');
+        
+        activeSessions.forEach((session, index) => {
+            console.log(`${index + 1}. ${session} (Node ID: ${nodeIds[index]})`);
+        });
+        
+        const nodeChoice = await this.getUserInput(`请选择节点 (1-${activeSessions.length}): `);
+        const nodeIndex = parseInt(nodeChoice) - 1;
+        
+        if (nodeIndex >= 0 && nodeIndex < activeSessions.length) {
+            await this.viewNodeLog(activeSessions[nodeIndex], nodeIds[nodeIndex]);
+        } else {
+            console.log('❌ 无效选择');
+        }
+    }
+
+    // 连接到节点
+    async connectToNode(activeSessions, nodeIds) {
+        console.log('\n🔗 选择要连接的节点:');
+        
+        activeSessions.forEach((session, index) => {
+            console.log(`${index + 1}. ${session} (Node ID: ${nodeIds[index]})`);
+        });
+        
+        const nodeChoice = await this.getUserInput(`请选择节点 (1-${activeSessions.length}): `);
+        const nodeIndex = parseInt(nodeChoice) - 1;
+        
+        if (nodeIndex >= 0 && nodeIndex < activeSessions.length) {
+            console.log(`\n🔗 连接到 ${activeSessions[nodeIndex]}...`);
+            console.log('💡 提示: 使用 Ctrl+A, D 从会话分离并返回菜单');
+            console.log('按回车继续...');
+            await this.getUserInput('');
+            
+            // 连接到screen会话
+            spawn('screen', ['-r', activeSessions[nodeIndex]], { stdio: 'inherit' });
+        } else {
+            console.log('❌ 无效选择');
+        }
+    }
+
+    // 停止所有节点
+    async stopAllNodes() {
+        console.log('\n⚠️  确认要停止所有节点吗？');
+        const confirm = await this.getUserInput('输入 "yes" 确认停止: ');
+        
+        if (confirm.toLowerCase() === 'yes') {
+            try {
+                execSync('./stop_all_nodes.sh', { stdio: 'inherit' });
+                console.log('✅ 所有节点已停止');
+            } catch (error) {
+                console.log('❌ 停止节点时出错:', error.message);
+            }
+        } else {
+            console.log('❌ 操作已取消');
+        }
+    }
+
     // 主函数
     async run() {
         console.log(banner);
@@ -291,6 +432,9 @@ ${this.nexusCliPath} start --node-id $NODE_ID
             console.log('\n🎉 节点启动完成！');
             console.log('   使用 screen -ls 查看运行状态');
             console.log('   使用 ./stop_all_nodes.sh 停止所有节点');
+            
+            // 启动交互菜单
+            await this.interactiveMenu(activeSessions, nodeIds);
         } else {
             console.log('❌ 没有成功启动任何节点');
         }

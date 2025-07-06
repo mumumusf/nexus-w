@@ -4,14 +4,7 @@
 
 ## 部署说明
 
-### 1. 克隆项目
-
-```bash
-git clone https://github.com/mumumusf/nexus-w.git
-cd nexus-w
-```
-
-### 2. 安装Node.js (如果没有)
+### 1. 安装Node.js (如果没有)
 
 ```bash
 # 下载并安装 nvm
@@ -33,6 +26,13 @@ nvm current # 预期输出: v22.13.1
 npm -v    # 预期输出: 10.9.2
 ```
 
+### 2. 克隆项目
+
+```bash
+git clone https://github.com/mumumusf/nexus-w.git
+cd nexus-w
+```
+
 ### 3. 运行脚本
 
 ```bash
@@ -45,8 +45,8 @@ node nexus-miner.js
 
 ### 4. 按提示操作
 
-- 输入您的 Node ID
 - 选择要运行的节点数量
+- 为每个节点输入不同的 Node ID
 - 脚本将自动安装依赖并启动节点
 
 ## 管理命令
