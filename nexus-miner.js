@@ -119,6 +119,83 @@ class NexusMiner {
 
 
 
+    // 检测运行中的 Nexus 节点
+    checkRunningNodes() {
+        try {
+            // 检查 screen 会话中的 nexus 节点
+            const screenOutput = execSync('screen -ls 2>/dev/null || true', { encoding: 'utf8' });
+            const nexusScreens = screenOutput.split('\n').filter(line => 
+                line.includes('nexus_node_') && (line.includes('Attached') || line.includes('Detached'))
+            );
+            
+            // 检查是否有 nexus 进程在运行
+            const processOutput = execSync('ps aux | grep nexus | grep -v grep || true', { encoding: 'utf8' });
+            const nexusProcesses = processOutput.split('\n').filter(line => 
+                line.includes('nexus') && !line.includes('grep')
+            );
+            
+            return {
+                screens: nexusScreens,
+                processes: nexusProcesses,
+                hasRunning: nexusScreens.length > 0 || nexusProcesses.length > 0
+            };
+        } catch (error) {
+            console.log('⚠️  检测运行节点时出错:', error.message);
+            return { screens: [], processes: [], hasRunning: false };
+        }
+    }
+
+    // 停止所有运行中的节点
+    async stopExistingNodes() {
+        console.log('\n🛑 检测到运行中的节点，正在停止...');
+        
+        try {
+            // 停止所有 nexus 相关的 screen 会话
+            const screenOutput = execSync('screen -ls 2>/dev/null || true', { encoding: 'utf8' });
+            const nexusScreens = screenOutput.split('\n').filter(line => 
+                line.includes('nexus_node_') && (line.includes('Attached') || line.includes('Detached'))
+            );
+            
+            for (const screenLine of nexusScreens) {
+                const sessionMatch = screenLine.match(/(\d+\.nexus_node_\d+)/);
+                if (sessionMatch) {
+                    const sessionName = sessionMatch[1];
+                    try {
+                        execSync(`screen -S ${sessionName} -X quit`, { stdio: 'ignore' });
+                        console.log(`✅ 已停止 screen 会话: ${sessionName}`);
+                    } catch (error) {
+                        console.log(`⚠️  无法停止会话 ${sessionName}:`, error.message);
+                    }
+                }
+            }
+            
+            // 强制终止所有 nexus 进程
+            try {
+                execSync('pkill -f nexus-network || true', { stdio: 'ignore' });
+                console.log('✅ 已终止所有 nexus 进程');
+            } catch (error) {
+                console.log('⚠️  终止进程时出错:', error.message);
+            }
+            
+            // 等待进程完全终止
+            console.log('⏳ 等待进程完全停止...');
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            
+            // 清理可能存在的脚本文件
+            try {
+                execSync('rm -f start_node_*.sh stop_all_nodes.sh 2>/dev/null || true', { stdio: 'ignore' });
+                console.log('✅ 已清理旧的脚本文件');
+            } catch (error) {
+                // 忽略清理错误
+            }
+            
+            console.log('✅ 所有运行中的节点已停止');
+            
+        } catch (error) {
+            console.log('⚠️  停止节点时出错:', error.message);
+        }
+    }
+
     // 内存优化建议
     showMemoryOptimizationTips() {
         console.log('\n🚀 内存优化建议:');
@@ -129,19 +206,13 @@ class NexusMiner {
         console.log('   5. 考虑使用更大内存的服务器');
     }
 
-    // 安装Nexus CLI
+    // 安装Nexus CLI (每次都重新安装)
     async installNexusCLI() {
-        console.log('\n🔧 正在安装 Nexus CLI...');
+        console.log('\n🔧 正在重新安装 Nexus CLI...');
         
         try {
-            // 检查是否已经安装
-            if (fs.existsSync(this.nexusCliPath)) {
-                console.log('✅ Nexus CLI 已经安装');
-                return true;
-            }
-            
-            // 安装Nexus CLI
-            console.log('📥 正在下载并安装 Nexus CLI...');
+            // 每次都重新安装
+            console.log('📥 正在下载并安装最新版本的 Nexus CLI...');
             execSync('curl -L https://cli.nexus.xyz | sh', { 
                 stdio: 'inherit',
                 shell: '/bin/bash'
@@ -469,6 +540,33 @@ ${this.nexusCliPath} start --node-id $NODE_ID
             }
         } catch (error) {
             console.log('⚠️  警告: 无法检测系统版本');
+        }
+        
+        // 检测并停止运行中的节点
+        console.log('\n🔍 检测运行中的 Nexus 节点...');
+        const runningNodes = this.checkRunningNodes();
+        
+        if (runningNodes.hasRunning) {
+            console.log(`\n⚠️  发现运行中的节点:`);
+            if (runningNodes.screens.length > 0) {
+                console.log(`   Screen会话: ${runningNodes.screens.length} 个`);
+                runningNodes.screens.forEach(screen => {
+                    console.log(`   - ${screen.trim()}`);
+                });
+            }
+            if (runningNodes.processes.length > 0) {
+                console.log(`   进程: ${runningNodes.processes.length} 个`);
+            }
+            
+            const confirmStop = await this.getUserInput('\n是否停止所有运行中的节点？(yes/no): ');
+            if (confirmStop.toLowerCase() === 'yes') {
+                await this.stopExistingNodes();
+            } else {
+                console.log('\n❌ 无法在有节点运行时启动新节点，程序退出');
+                return;
+            }
+        } else {
+            console.log('✅ 没有检测到运行中的节点');
         }
         
         // 检查screen是否安装
