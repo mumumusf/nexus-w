@@ -11,7 +11,6 @@ class NexusMiner {
         this.nodeMemoryRequired = 3.5; // GB per node (从4.5优化到3.5)
         this.systemReservedMemory = 2; // GB 为系统保留更多内存
         this.nexusCliPath = path.join(process.env.HOME, '.nexus/bin/nexus-network');
-        this.memoryMonitorInterval = null;
     }
 
     // 检测系统内存（GB）
@@ -84,8 +83,8 @@ class NexusMiner {
         }
     }
 
-    // 优化的节点数量计算（仅基于内存）
-    calculateMaxNodes() {
+    // 内存检测和节点数量建议（非强制）
+    calculateRecommendedNodes() {
         const memory = this.detectMemory();
         const totalCPU = this.detectCPU();
         
@@ -94,53 +93,31 @@ class NexusMiner {
         console.log(`   可用内存: ${memory.available} GB`);
         console.log(`   CPU核心: ${totalCPU} 核 (仅供参考)`);
         
-        // 基于可用内存计算，而不是总内存
+        // 基于可用内存计算建议值，而不是总内存
         const usableMemory = memory.available - this.systemReservedMemory;
-        const maxNodes = Math.floor(usableMemory / this.nodeMemoryRequired);
+        const recommendedNodes = Math.floor(usableMemory / this.nodeMemoryRequired);
         
-        console.log(`\n💡 内存分配策略:`);
+        console.log(`\n💡 内存分配建议:`);
         console.log(`   系统保留: ${this.systemReservedMemory} GB`);
         console.log(`   可分配内存: ${usableMemory} GB`);
-        console.log(`   每节点需求: ${this.nodeMemoryRequired} GB`);
-        console.log(`   推荐节点数: ${maxNodes} 个`);
+        console.log(`   每节点建议需求: ${this.nodeMemoryRequired} GB`);
+        console.log(`   建议节点数: ${Math.max(0, recommendedNodes)} 个`);
         
-        if (maxNodes <= 0) {
-            console.log(`⚠️  警告: 可用内存不足，需要至少 ${this.nodeMemoryRequired + this.systemReservedMemory} GB`);
+        if (recommendedNodes <= 0) {
+            console.log(`⚠️  内存不足警告: 系统内存较少，建议配置至少 ${this.nodeMemoryRequired + this.systemReservedMemory} GB 内存`);
+            console.log(`   您仍可以尝试运行少量节点，但可能影响性能`);
+        } else if (recommendedNodes < 2) {
+            console.log(`⚠️  性能提示: 建议增加系统内存以获得更好的挖矿效果`);
         }
         
-        return Math.max(0, maxNodes);
+        return {
+            recommended: Math.max(0, recommendedNodes),
+            available: memory.available,
+            total: memory.total
+        };
     }
 
-    // 启动内存监控
-    startMemoryMonitor() {
-        console.log('\n📊 启动内存监控...');
-        
-        this.memoryMonitorInterval = setInterval(() => {
-            const usage = this.getCurrentMemoryUsage();
-            if (usage) {
-                console.log(`\n💾 内存使用情况: ${usage.used}GB/${usage.total}GB (${usage.usagePercent}%)`);
-                
-                // 内存使用率超过85%时发出警告
-                if (usage.usagePercent > 85) {
-                    console.log('⚠️  警告: 内存使用率过高，建议减少节点数量或优化系统');
-                }
-                
-                // 内存使用率超过95%时建议停止节点
-                if (usage.usagePercent > 95) {
-                    console.log('🚨 严重警告: 内存即将耗尽，建议立即停止部分节点！');
-                }
-            }
-        }, 30000); // 每30秒检查一次
-    }
 
-    // 停止内存监控
-    stopMemoryMonitor() {
-        if (this.memoryMonitorInterval) {
-            clearInterval(this.memoryMonitorInterval);
-            this.memoryMonitorInterval = null;
-            console.log('📊 内存监控已停止');
-        }
-    }
 
     // 内存优化建议
     showMemoryOptimizationTips() {
@@ -263,7 +240,7 @@ ${this.nexusCliPath} start --node-id $NODE_ID
         return activeScreens;
     }
 
-    // 显示管理命令（添加内存相关命令）
+    // 显示管理命令
     showManagementCommands(sessions) {
         console.log('\n🎛️  节点管理命令:');
         console.log('   查看所有会话: screen -ls');
@@ -282,25 +259,10 @@ ${this.nexusCliPath} start --node-id $NODE_ID
         fs.writeFileSync('stop_all_nodes.sh', `#!/bin/bash\n${stopScript}\necho "所有节点已停止"`);
         execSync('chmod +x stop_all_nodes.sh');
         
-        // 创建内存监控脚本
-        const memoryScript = `#!/bin/bash
-while true; do
-    echo "=== $(date) ==="
-    free -h
-    echo "内存使用率: $(free | grep Mem | awk '{printf("%.2f%%", $3/$2 * 100.0)}')"
-    echo ""
-    sleep 10
-done`;
-        
-        fs.writeFileSync('monitor_memory.sh', memoryScript);
-        execSync('chmod +x monitor_memory.sh');
-        
         console.log('\n活跃会话列表:');
         sessions.forEach((session, index) => {
             console.log(`   ${index}: ${session}`);
         });
-        
-        console.log('\n📊 使用 ./monitor_memory.sh 实时监控内存');
     }
 
     // 获取用户输入
@@ -336,7 +298,7 @@ done`;
         }
     }
 
-    // 交互菜单（添加内存相关选项）
+    // 交互菜单
     async interactiveMenu(activeSessions, nodeIds) {
         while (true) {
             console.log('\n' + '='.repeat(50));
@@ -347,12 +309,11 @@ done`;
             console.log('3. 连接到节点 (进入screen会话)');
             console.log('4. 查看内存使用情况');
             console.log('5. 内存优化建议');
-            console.log('6. 启动/停止内存监控');
-            console.log('7. 停止所有节点');
-            console.log('8. 退出菜单');
+            console.log('6. 停止所有节点');
+            console.log('7. 退出菜单');
             console.log('='.repeat(50));
             
-            const choice = await this.getUserInput('请选择操作 (1-8): ');
+            const choice = await this.getUserInput('请选择操作 (1-7): ');
             
             switch (choice) {
                 case '1':
@@ -376,21 +337,15 @@ done`;
                     break;
                     
                 case '6':
-                    await this.toggleMemoryMonitor();
-                    break;
-                    
-                case '7':
                     await this.stopAllNodes();
                     return;
                     
-                case '8':
+                case '7':
                     console.log('\n👋 退出管理菜单，节点继续在后台运行');
                     console.log('使用以下命令管理节点:');
                     console.log('   查看状态: screen -ls');
                     console.log('   连接节点: screen -r nexus_node_<编号>');
                     console.log('   停止所有: ./stop_all_nodes.sh');
-                    console.log('   内存监控: ./monitor_memory.sh');
-                    this.stopMemoryMonitor();
                     return;
                     
                 default:
@@ -500,16 +455,7 @@ done`;
         }
     }
 
-    // 切换内存监控
-    async toggleMemoryMonitor() {
-        if (this.memoryMonitorInterval) {
-            this.stopMemoryMonitor();
-            console.log('✅ 内存监控已停止');
-        } else {
-            this.startMemoryMonitor();
-            console.log('✅ 内存监控已启动');
-        }
-    }
+
 
     // 主函数
     async run() {
@@ -534,23 +480,46 @@ done`;
             }
         }
         
-        // 计算最大节点数
-        const maxNodes = this.calculateMaxNodes();
+        // 获取内存检测结果和建议
+        const memoryInfo = this.calculateRecommendedNodes();
         
-        if (maxNodes <= 0) {
-            console.log('❌ 系统资源不足，无法运行节点');
-            return;
+        // 显示建议信息
+        if (memoryInfo.recommended > 0) {
+            console.log(`\n✅ 根据您的系统配置，我们建议运行 ${memoryInfo.recommended} 个节点以获得最佳性能`);
+        } else {
+            console.log(`\n⚠️  您的系统内存较少，建议谨慎设置节点数量，从1-2个节点开始尝试`);
         }
         
-        // 获取用户输入
+        console.log(`\n📝 请注意：`);
+        console.log(`   • 建议值仅供参考，您可以根据实际需求调整`);
+        console.log(`   • 运行过多节点可能导致系统卡顿或内存不足`);
+        console.log(`   • 建议从少量节点开始，观察系统性能后再增加`);
+        
+        // 获取用户输入（不限制上限）
         const nodeCountInput = await this.getUserInput(
-            `您最多可以运行 ${maxNodes} 个节点，请输入要运行的节点数量 (1-${maxNodes}): `
+            `请输入要运行的节点数量 (建议: ${memoryInfo.recommended > 0 ? memoryInfo.recommended : '1-2'} 个): `
         );
         
         const nodeCount = parseInt(nodeCountInput);
-        if (isNaN(nodeCount) || nodeCount < 1 || nodeCount > maxNodes) {
-            console.log('❌ 无效的节点数量');
+        if (isNaN(nodeCount) || nodeCount < 1) {
+            console.log('❌ 请输入有效的节点数量 (至少1个)');
             return;
+        }
+        
+        // 如果超出建议值，给出警告但不阻止
+        if (memoryInfo.recommended > 0 && nodeCount > memoryInfo.recommended) {
+            console.log(`\n⚠️  警告: 您选择的节点数量 (${nodeCount}) 超出建议值 (${memoryInfo.recommended})`);
+            console.log(`   这可能导致:`);
+            console.log(`   • 系统内存不足`);
+            console.log(`   • 节点运行不稳定`);
+            console.log(`   • 系统响应缓慢`);
+            
+            const confirmInput = await this.getUserInput('确认继续吗？输入 "yes" 继续，其他任意键取消: ');
+            if (confirmInput.toLowerCase() !== 'yes') {
+                console.log('❌ 操作已取消，请重新选择节点数量');
+                return;
+            }
+            console.log('⚠️  您选择了超出建议的节点数量，请密切监控系统性能');
         }
 
         // 为每个节点获取Node ID
@@ -603,14 +572,9 @@ done`;
             console.log('\n🎛️  管理命令:');
             console.log('   查看运行状态: screen -ls');
             console.log('   停止所有节点: ./stop_all_nodes.sh');
-            console.log('   实时内存监控: ./monitor_memory.sh');
             
             // 显示内存优化提示
             this.showMemoryOptimizationTips();
-            
-            // 自动启动内存监控
-            console.log('\n📊 自动启动内存监控...');
-            this.startMemoryMonitor();
             
             // 启动交互菜单
             await this.interactiveMenu(activeSessions, nodeIds);
